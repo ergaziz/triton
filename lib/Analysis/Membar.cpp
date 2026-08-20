@@ -661,6 +661,8 @@ bool containsLocalBarrier(Operation *op) {
     return !arrive.getPerThread();
   if (isa<triton::gpu::WarpSpecializePartitionsOp>(op))
     return true;
+  if (isa<triton::gpu::WarpYieldOp, triton::gpu::WarpReturnOp>(op))
+    return true;
   if (auto barrier = dyn_cast<triton::gpu::BarrierOp>(op))
     return barrier.hasLocal();
   if (auto wgWait = dyn_cast<ttng::WarpGroupDotWaitOp>(op))
