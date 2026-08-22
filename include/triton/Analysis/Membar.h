@@ -261,6 +261,54 @@ private:
 /// analyses.
 bool containsLocalBarrier(Operation *op);
 
+/// Tracks the shared-memory state needed at the current program point and at
+/// function boundaries.
+struct MembarInfo {
+  /// Buffers accessed since the most recent synchronization.
+  BlockInfo pending;
+
+  /// Buffers reachable from the function entry block before the first
+  /// synchronization.
+  /// It keeps incrementing during the iterative algorithm until
+  ///  we note all paths to a basic block has synchronized.
+  BlockInfo entryBlockInfo;
+
+  /// Whether every path from the function entry block to the current program
+  /// point has synchronized.
+  bool allPathsFromEntrySynced = false;
+
+  MembarInfo &join(const MembarInfo &other) {
+    pending.join(other.pending);
+    entryBlockInfo.join(other.entryBlockInfo);
+    allPathsFromEntrySynced &= other.allPathsFromEntrySynced;
+    return *this;
+  }
+
+  void addBlockInfo(const BlockInfo &blockInfo) {
+    if (!allPathsFromEntrySynced)
+      entryBlockInfo.join(blockInfo);
+    pending.join(blockInfo);
+  }
+
+  void sync() {
+    pending.sync();
+    allPathsFromEntrySynced = true;
+  }
+
+  void applyCallSummary(const MembarInfo &callee) {
+    if (!allPathsFromEntrySynced)
+      entryBlockInfo.join(callee.entryBlockInfo);
+    if (callee.allPathsFromEntrySynced)
+      sync();
+    pending.join(callee.pending);
+  }
+
+  bool operator==(const MembarInfo &other) const {
+    return pending == other.pending && entryBlockInfo == other.entryBlockInfo &&
+           allPathsFromEntrySynced == other.allPathsFromEntrySynced;
+  }
+};
+
 inline BlockInfo translateBlockInfoToCallsite(const BlockInfo &calleeBlockInfo,
                                               size_t callOffset) {
   BlockInfo translatedBlockInfo;
@@ -285,17 +333,9 @@ inline BlockInfo translateBlockInfoToCallsite(const BlockInfo &calleeBlockInfo,
 // Shared Memory Barrier Analysis
 //===----------------------------------------------------------------------===//
 
-// Common class to analyze membar and fence placement.
-class MembarOrFenceAnalysis
-    : public triton::PostOrderFunctionAnalysis<BlockInfo> {
-public:
-  MembarOrFenceAnalysis(Allocation &allocation, MembarFilterFn filter,
-                        MembarScratchSync scratchSync = {})
-      : allocation(allocation), filter(std::move(filter)),
-        scratchSync(std::move(scratchSync)) {}
-
-  void run(FunctionOpInterface function, FuncMapT &funcMap);
-
+// Shared stage-loop discovery and slice transport for membar and fence
+// analyses.
+class MembarStageAnalysis {
 protected:
   // A deliberately bounded CF loop: preheader -> header -> body -> header,
   // with a signed exclusive test, constant nonnegative start and unit step.
@@ -309,6 +349,23 @@ protected:
   SmallVector<StageLoop> stageLoops;
   void discoverStageLoops(FunctionOpInterface function);
   Value getStageBasis(Operation *operation) const;
+  BlockInfo transferStageEdge(const BlockInfo &info, Block *from,
+                              Block *to) const;
+};
+
+// Common class to analyze fence placement with BlockInfo state.
+class MembarOrFenceAnalysis
+    : public triton::PostOrderFunctionAnalysis<BlockInfo>,
+      protected MembarStageAnalysis {
+public:
+  MembarOrFenceAnalysis(Allocation &allocation, MembarFilterFn filter,
+                        MembarScratchSync scratchSync = {})
+      : allocation(allocation), filter(std::move(filter)),
+        scratchSync(std::move(scratchSync)) {}
+
+  void run(FunctionOpInterface function, FuncMapT &funcMap);
+
+protected:
   BlockInfo transferEdge(const BlockInfo &info, Block *from,
                          Block *to) const override;
 
@@ -317,7 +374,8 @@ protected:
   MembarScratchSync scratchSync;
 };
 
-class MembarAnalysis : public MembarOrFenceAnalysis {
+class MembarAnalysis : public triton::PostOrderFunctionAnalysis<MembarInfo>,
+                       protected MembarStageAnalysis {
 public:
   /// Creates a new Membar analysis that generates the shared memory barrier
   /// in the following circumstances:
@@ -334,25 +392,31 @@ public:
   /// analysis.
   MembarAnalysis(Allocation &allocation, MembarFilterFn filter,
                  MembarScratchSync scratchSync = {})
-      : MembarOrFenceAnalysis(allocation, std::move(filter),
-                              std::move(scratchSync)),
+      : allocation(allocation), filter(std::move(filter)),
+        scratchSync(std::move(scratchSync)),
         bufferIndexAnalysis(
             cast<FunctionOpInterface>(allocation.getOperation())) {}
 
   void run(FunctionOpInterface function, FuncMapT &funcMap);
 
 private:
+  MembarInfo transferEdge(const MembarInfo &info, Block *from,
+                          Block *to) const override;
+
   /// Updates the BlockInfo operation based on the operation.
-  void update(Operation *operation, BlockInfo *blockInfo, FuncMapT *funcMap,
+  void update(Operation *operation, MembarInfo *membarInfo, FuncMapT *funcMap,
               OpBuilder *builder) override;
 
   void updateSuccessor(Operation *terminator, Block *successor,
-                       BlockInfo *blockInfo) override;
+                       MembarInfo *membarInfo) override;
 
-  void updateExitState(BlockInfo *blockInfo) override;
+  void updateExitState(MembarInfo *membarInfo) override;
 
   void insertBarrier(Operation *operation, OpBuilder *builder);
 
+  Allocation &allocation;
+  MembarFilterFn filter;
+  MembarScratchSync scratchSync;
   // Materialize only the final decisions, after CFG analysis has converged.
   llvm::SmallPtrSet<Operation *, 16> scratchSyncOps;
   BufferIndexAnalysis bufferIndexAnalysis;
@@ -392,7 +456,23 @@ private:
   MembarScratchSync scratchSync;
 };
 
-using ModuleMembarAnalysis = ModuleMembarOrFenceAnalysis<MembarAnalysis>;
+/// Inserts shared-memory barriers across a module. Function summaries retain
+/// entry-prefix and pending exit states for calls.
+class ModuleMembarAnalysis {
+public:
+  ModuleMembarAnalysis(ModuleAllocation &moduleAllocation,
+                       MembarFilterFn filter = nullptr,
+                       MembarScratchSync scratchSync = {})
+      : moduleAllocation(moduleAllocation), filter(std::move(filter)),
+        scratchSync(std::move(scratchSync)) {}
+
+  void run();
+
+private:
+  ModuleAllocation &moduleAllocation;
+  MembarFilterFn filter;
+  MembarScratchSync scratchSync;
+};
 
 } // namespace mlir
 
