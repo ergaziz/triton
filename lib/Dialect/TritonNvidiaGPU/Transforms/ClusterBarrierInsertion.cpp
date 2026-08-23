@@ -324,7 +324,7 @@ void ClusterBarrierAnalysis::update(Operation *op, BlockInfo *blockInfo,
       memEffects.getEffects(effectInstances);
       for (auto effectInstance : effectInstances) {
         if (auto value = effectInstance.getValue()) {
-          for (auto bufferId : allocation.getBufferIds(value)) {
+          for (auto bufferId : allocation.getAllBufferIdsWithAliases(value)) {
             if (bufferId != Allocation::InvalidBufferId) {
               auto interval = allocation.getAllocatedInterval(bufferId);
               auto slice = AllocationSlice(value, interval, bufferId);
