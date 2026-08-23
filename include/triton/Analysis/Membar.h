@@ -414,8 +414,11 @@ private:
 
   void insertBarrier(Operation *operation, OpBuilder *builder);
 
+protected:
   Allocation &allocation;
   MembarFilterFn filter;
+
+private:
   MembarScratchSync scratchSync;
   // Materialize only the final decisions, after CFG analysis has converged.
   llvm::SmallPtrSet<Operation *, 16> scratchSyncOps;
@@ -467,6 +470,19 @@ public:
         scratchSync(std::move(scratchSync)) {}
 
   void run();
+
+  template <typename AnalysisT> void runAnalysis() {
+    triton::CallGraph<MembarInfo> callGraph(moduleAllocation.getModuleOp());
+    triton::CallGraph<MembarInfo>::FuncDataMapT summaries;
+    callGraph.walk<WalkOrder::PreOrder, WalkOrder::PostOrder>(
+        [](CallOpInterface, FunctionOpInterface) {},
+        [&](FunctionOpInterface function) {
+          if (!summaries.try_emplace(function).second)
+            return;
+          auto &allocation = *moduleAllocation.getFuncData(function);
+          AnalysisT(allocation, filter, scratchSync).run(function, summaries);
+        });
+  }
 
 private:
   ModuleAllocation &moduleAllocation;
