@@ -1365,7 +1365,7 @@ class tensor(base_value):
     def sigmoid(self) -> tensor:
         ...
 
-    def softmax(self, dim=None, ieee_rounding=False) -> tensor:
+    def softmax(self, dim=None, *, ieee_rounding=False) -> tensor:
         ...
 
     def ravel(self) -> tensor:
