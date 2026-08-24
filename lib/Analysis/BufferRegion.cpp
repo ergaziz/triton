@@ -284,6 +284,7 @@ bool reachesNPOTLinearLayoutAssert(Type type) {
 }
 
 struct MemDescSubsliceOffsets {
+  uint32_t storageOffset = 0;
   uint32_t byteOffset = 0;
   uint32_t partitionOffset = 0;
   uint32_t ctaOffset = 0;
@@ -325,20 +326,27 @@ getMemDescSubsliceUnpaddedOffsets(ttg::MemDescSubsliceOp op) {
     else if (dim == partitionDim)
       partitionOffset = static_cast<uint32_t>(offset);
   }
+  uint64_t storageElementOffset = 0;
   if (offsets.size() != layoutRank) {
     uint64_t stride = ttg::getAllocationElems(
         encoding, ttg::dropPipeliningDim(srcTy.getAllocShape(), encoding));
-    elementOffset += static_cast<uint64_t>(offsets.front()) * stride;
+    // The pipeline prefix advances every physical base by addition. Only the
+    // layout-ranked suffix composes by XOR; nested prefix offsets may carry.
+    // Padded pipeline subslices are rejected by the verifier.
+    storageElementOffset = static_cast<uint64_t>(offsets.front()) * stride;
   }
 
   uint64_t elementSizeBytes =
       srcTy.getElementType().getIntOrFloatBitWidth() / 8;
   assert(elementSizeBytes > 0 && "element size must be non-zero");
+  uint64_t storageOffset = storageElementOffset * elementSizeBytes;
   uint64_t byteOffset = elementOffset * elementSizeBytes;
-
+  assert(storageOffset <= std::numeric_limits<uint32_t>::max() &&
+         "memdesc_subslice storage offset exceeds 32-bit range");
   assert(byteOffset <= std::numeric_limits<uint32_t>::max() &&
-         "memdesc_subslice offset exceeds 32-bit range");
-  return MemDescSubsliceOffsets{static_cast<uint32_t>(byteOffset),
+         "memdesc_subslice byte offset exceeds 32-bit range");
+  return MemDescSubsliceOffsets{static_cast<uint32_t>(storageOffset),
+                                static_cast<uint32_t>(byteOffset),
                                 partitionOffset, blockOffset};
 }
 
@@ -696,9 +704,9 @@ LogicalResult BufferRegionAnalysis::visitOperation(
         getMemDescSubsliceUnpaddedOffsets(memdescSubsliceOp);
     for (const BufferRegionView &view : in.views)
       regionInfo.views.insert(
-          getSubView(memdescSubsliceOp.getType(), view, /*storageOffset=*/0,
-                     relativeOffset.byteOffset, relativeOffset.partitionOffset,
-                     relativeOffset.ctaOffset));
+          getSubView(memdescSubsliceOp.getType(), view,
+                     relativeOffset.storageOffset, relativeOffset.byteOffset,
+                     relativeOffset.partitionOffset, relativeOffset.ctaOffset));
     return propagateRegions(regionInfo);
   }
   if (isa<ttg::MemDescDynamicSubsliceOp>(op)) {
