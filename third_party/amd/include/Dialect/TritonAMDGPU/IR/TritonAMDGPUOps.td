@@ -346,7 +346,7 @@ def BufferLoadOp
 def BufferLoadToLocalOp
     : TT_AMDGPU_Op<
           "buffer_load_to_local",
-          [AttrSizedOperandSegments, BufferOpInterface,
+          [GlobalToLocalCopyTrait, AttrSizedOperandSegments, BufferOpInterface,
            DeclareOpInterfaceMethods<PredicatedOpInterface>,
            TypesMatchWith<"dest element type matches pointee type of ptr",
                           "dest", "ptr", "$_self",
@@ -1184,7 +1184,8 @@ def ReadBarrierPhaseOp
 
 def AsyncTDMCopyGlobalToLocalOp
     : TT_AMDGPU_Op<"async_tdm_copy_global_to_local",
-                   [DeclareOpInterfaceMethods<MBarrierOpInterface>,
+                   [GlobalToLocalCopyTrait,
+                    DeclareOpInterfaceMethods<MBarrierOpInterface>,
                     DeclareOpInterfaceMethods<TDMOpInterface>]> {
   let summary = "Copy data based on descriptor from global memory to local "
                 "memory asynchronously";
@@ -1268,7 +1269,7 @@ def AsyncTDMCopyGlobalToLocalOp
 
 def AsyncTDMFusedCopyGlobalToLocalOp
     : TT_AMDGPU_Op<"async_tdm_fused_copy_global_to_local",
-                   [AttrSizedOperandSegments]> {
+                   [GlobalToLocalCopyTrait, AttrSizedOperandSegments]> {
   let summary = "Fuse multiple TDM global-to-local copies into one async "
                 "operation";
 
@@ -1397,7 +1398,8 @@ def AsyncTDMScatterOp
 
 def AsyncTDMGatherOp
     : TT_AMDGPU_Op<
-          "async_tdm_gather", [DeclareOpInterfaceMethods<MBarrierOpInterface>,
+          "async_tdm_gather", [GlobalToLocalCopyTrait,
+                               DeclareOpInterfaceMethods<MBarrierOpInterface>,
                                DeclareOpInterfaceMethods<TDMOpInterface>]> {
   let summary = "Gather data from non-contiguous global memory rows to local "
                 "memory asynchronously";
