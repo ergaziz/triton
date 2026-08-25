@@ -453,8 +453,8 @@ void TMemBarrierAnalysis::insertBarrier(Operation *op, OpBuilder *builder) {
 
 void TMemBarrierAnalysis::update(Operation *op, MembarInfo *membarInfo,
                                  FuncMapT *funcMap, OpBuilder *builder) {
-  // Per-thread arrives are not local barriers at all (see
-  // containsLocalBarrier), so they fall through to the generic path untouched.
+  // Per-thread arrives are not local barriers, so they fall through to the
+  // generic path untouched.
   if (auto arrive = dyn_cast<ArriveBarrierOp>(op);
       arrive && !arrive.getPerThread()) {
     // An mbarrier arrive signals another task; it orders nothing across this
@@ -464,10 +464,9 @@ void TMemBarrierAnalysis::update(Operation *op, MembarInfo *membarInfo,
     membarInfo->pending.syncWriteSlices.clear();
     return;
   }
-  if (mlir::containsLocalBarrier(op)) {
+  auto stages = mlir::getLocalBarrierStages(op, &allocation);
+  if (stages.beforeMemoryEffects)
     membarInfo->sync();
-    return;
-  }
 
   BlockInfo curBlockInfo;
   if (isa<triton::CallOp>(op)) {
@@ -513,6 +512,11 @@ void TMemBarrierAnalysis::update(Operation *op, MembarInfo *membarInfo,
   }
 
   membarInfo->addBlockInfo(curBlockInfo);
+  // A leading or interior rendezvous must preserve the operation's own effects.
+  if (stages.afterMemoryEffects ||
+      (stages.betweenMemoryEffects && curBlockInfo.syncReadSlices.empty() &&
+       curBlockInfo.syncWriteSlices.empty()))
+    membarInfo->sync();
 }
 
 } // namespace
