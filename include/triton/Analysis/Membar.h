@@ -3,6 +3,7 @@
 
 #include "Allocation.h"
 #include "BufferIndexAnalysis.h"
+#include "BufferRegion.h"
 #include "CallGraph.h"
 #include "Function.h"
 
@@ -17,6 +18,9 @@ namespace mlir {
 
 class OpBuilder;
 struct AllocationSlice;
+
+// Complete MAY-addresses in a known kernel allocation frame.
+using SharedMemoryFootprints = DenseMap<Value, triton::AddressSet>;
 
 /// Callback to allow backend to provide more information on whether a barrier
 /// is needed between two operations. Even though two operations access the same
@@ -87,14 +91,15 @@ public:
   AllocationSlice translated(size_t offset,
                              bool invalidateBufferId = false) const {
     AllocationSlice shifted = invalidateBufferId ? forgetStageLoop() : *this;
+    // Footprints belong to the callee's allocation frame, not the caller's.
+    shifted.physicalFootprint = nullptr;
     shifted.allocationInterval =
         Interval<size_t>(shifted.allocationInterval.start() + offset,
                          shifted.allocationInterval.end() + offset);
     if (invalidateBufferId) {
       shifted.bufferId = Allocation::InvalidBufferId;
       shifted.stage = {};
-      // Per-function SSA identities cannot be compared across call sites.
-      shifted.bufferIndexExpr = nullptr;
+      shifted.invalidateIterationInfo();
     } else if (shifted.stage.parent) {
       shifted.stage.parentInterval =
           Interval<size_t>(shifted.stage.parentInterval.start() + offset,
@@ -105,11 +110,21 @@ public:
 
   void print(raw_ostream &os) const;
 
+  void invalidateIterationInfo() {
+    bufferIndexExpr = nullptr;
+    subsliceSource = {};
+  }
+
+  // Immutable geometry covering every dynamic instance of this access. It
+  // remains valid across backedges, unlike the epoch-relative facts above.
+  // The owning module analysis outlives every slice using this pointer.
+  const triton::AddressSet *physicalFootprint = nullptr;
+
   // Buffer-index expression attached by BufferIndexAnalysis. It participates
   // in ordering/equality so accesses to different slots remain separate.
   // Must not be mutated after the slice is inserted into a sorted container
   // (e.g. BlockInfo::SliceMapT); rebuild the container instead, as
-  // BufferIndexAnalysis::invalidateBufferIndices does.
+  // BlockInfo::invalidateIterationInfo does.
   const BufferIndexExpr *bufferIndexExpr = nullptr;
 
 private:
@@ -128,7 +143,8 @@ private:
                               size_t, unsigned, unsigned>;
 
   std::tuple<Interval<size_t>, Allocation::BufferId, const void *,
-             llvm::ArrayRef<int64_t>, StageKey, const BufferIndexExpr *>
+             llvm::ArrayRef<int32_t>, StageKey, const BufferIndexExpr *,
+             const void *, const void *>
   asTuple() const {
     return {allocationInterval,
             bufferId,
@@ -137,10 +153,15 @@ private:
             {stage.parent.getAsOpaquePointer(),
              stage.basis.getAsOpaquePointer(), stage.parentInterval,
              stage.stride, stage.numStages, stage.offset},
-            bufferIndexExpr};
+            bufferIndexExpr,
+            subsliceSource.getAsOpaquePointer(),
+            physicalFootprint};
   }
-  // Offsets from subslice. Empty when offsets are unknown
-  SmallVector<int64_t> subsliceOffsets;
+  // Offsets from subslice, borrowed from its immutable context-owned attribute.
+  // Empty when offsets are unknown.
+  llvm::ArrayRef<int32_t> subsliceOffsets;
+  // The source descriptor supplying the coordinates for subslice offsets.
+  Value subsliceSource;
   // The allocated interval for this buffer
   Interval<size_t> allocationInterval;
   // Type of the memory descriptor for this access
@@ -183,6 +204,10 @@ struct BlockInfo {
     transfer(syncWriteSlices, result.syncWriteSlices);
     return result;
   }
+
+  /// Clears iteration-relative indices and origins, rebuilding both maps so
+  /// ordered keys remain valid on loop backedges and in function summaries.
+  void invalidateIterationInfo();
 
   void dump() {
     auto &err = llvm::errs();
@@ -391,9 +416,11 @@ public:
   /// it is considered as the problem of the operation itself but not the membar
   /// analysis.
   MembarAnalysis(Allocation &allocation, MembarFilterFn filter,
-                 MembarScratchSync scratchSync = {})
+                 MembarScratchSync scratchSync,
+                 const SharedMemoryFootprints &physicalFootprints)
       : allocation(allocation), filter(std::move(filter)),
         scratchSync(std::move(scratchSync)),
+        physicalFootprints(physicalFootprints),
         bufferIndexAnalysis(
             cast<FunctionOpInterface>(allocation.getOperation())) {}
 
@@ -422,6 +449,7 @@ private:
   MembarScratchSync scratchSync;
   // Materialize only the final decisions, after CFG analysis has converged.
   llvm::SmallPtrSet<Operation *, 16> scratchSyncOps;
+  const SharedMemoryFootprints &physicalFootprints;
   BufferIndexAnalysis bufferIndexAnalysis;
 };
 
@@ -471,7 +499,9 @@ public:
 
   void run();
 
-  template <typename AnalysisT> void runAnalysis() {
+  template <typename AnalysisT>
+  void runAnalysis(const SharedMemoryFootprints &physicalFootprints =
+                       SharedMemoryFootprints{}) {
     triton::CallGraph<MembarInfo> callGraph(moduleAllocation.getModuleOp());
     triton::CallGraph<MembarInfo>::FuncDataMapT summaries;
     callGraph.walk<WalkOrder::PreOrder, WalkOrder::PostOrder>(
@@ -480,11 +510,14 @@ public:
           if (!summaries.try_emplace(function).second)
             return;
           auto &allocation = *moduleAllocation.getFuncData(function);
-          AnalysisT(allocation, filter, scratchSync).run(function, summaries);
+          AnalysisT(allocation, filter, scratchSync, physicalFootprints)
+              .run(function, summaries);
         });
   }
 
 private:
+  SharedMemoryFootprints getSharedMemoryFootprints();
+
   ModuleAllocation &moduleAllocation;
   MembarFilterFn filter;
   MembarScratchSync scratchSync;

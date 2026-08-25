@@ -77,7 +77,7 @@ unsigned getMemDescSize(ttg::MemDescType ty) {
   }
   assert(isa<ttg::SharedMemorySpaceAttr>(ty.getMemorySpace()) &&
          "Unsupported memory space");
-  unsigned elSize = ty.getElementType().getIntOrFloatBitWidth() / 8;
+  unsigned elSize = getIntOrFloatOrPtrBitWidth(ty.getElementType()) / 8;
   if (auto padded = ttg::getPaddedEncoding(encoding)) {
     uint64_t logicalElements = product(ttg::getShapePerCTA(ty));
     return padded.getPaddedSize({static_cast<int64_t>(logicalElements)}) *
@@ -103,7 +103,7 @@ uint32_t applySharedPadding(uint32_t byteOffset, ttg::MemDescType ty) {
   auto padded = ttg::getPaddedEncoding(ty.getEncoding());
   if (!padded)
     return byteOffset;
-  uint64_t elementSize = ty.getElementTypeBitWidth() / 8;
+  uint64_t elementSize = getIntOrFloatOrPtrBitWidth(ty.getElementType()) / 8;
   uint64_t elementOffset = byteOffset / elementSize;
   uint64_t paddedOffset =
       (padded.getPaddedSize({static_cast<int64_t>(elementOffset + 1)}) - 1) *
@@ -159,7 +159,7 @@ MemDescFootprint getMemDescAddresses(
   SmallVector<StringAttr> dims = triton::standardOutDimNames(ctx, ty.getRank());
   ArrayRef<int64_t> shape = ty.getShape();
   uint64_t numPoints = product(shape);
-  uint32_t bitWidth = ty.getElementTypeBitWidth();
+  uint32_t bitWidth = getIntOrFloatOrPtrBitWidth(ty.getElementType());
 
   StringAttr offsetName = StringAttr::get(ctx, "offset");
   StringAttr blockName = StringAttr::get(ctx, "block");
@@ -255,7 +255,7 @@ uint32_t getMemDescStorageOffset(ttg::MemDescType ty, unsigned index) {
     return index * ttng::getTmemAllocSizes(ty).numCols;
   uint64_t stageElems = ttg::getAllocationElems(ty.getEncoding(), ty.getShape(),
                                                 ty.getAllocShape());
-  uint64_t elementSize = ty.getElementTypeBitWidth() / 8;
+  uint64_t elementSize = getIntOrFloatOrPtrBitWidth(ty.getElementType()) / 8;
   uint64_t byteOffset = static_cast<uint64_t>(index) * stageElems * elementSize;
   uint64_t offset = applySharedPadding(byteOffset, ty);
   assert(offset <= std::numeric_limits<uint32_t>::max() &&
@@ -337,7 +337,7 @@ getMemDescSubsliceUnpaddedOffsets(ttg::MemDescSubsliceOp op) {
   }
 
   uint64_t elementSizeBytes =
-      srcTy.getElementType().getIntOrFloatBitWidth() / 8;
+      getIntOrFloatOrPtrBitWidth(srcTy.getElementType()) / 8;
   assert(elementSizeBytes > 0 && "element size must be non-zero");
   uint64_t storageOffset = storageElementOffset * elementSizeBytes;
   uint64_t byteOffset = elementOffset * elementSizeBytes;
