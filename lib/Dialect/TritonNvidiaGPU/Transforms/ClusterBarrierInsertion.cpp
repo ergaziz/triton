@@ -278,8 +278,13 @@ void ClusterBarrierAnalysis::insertClusterBarrier(Operation *op,
 
 void ClusterBarrierAnalysis::update(Operation *op, MembarInfo *membarInfo,
                                     FuncMapT *funcMap, OpBuilder *builder) {
-  if (isa<ttng::ClusterWaitOp, ttng::ClusterBarrierOp>(op)) {
+  if (isa<ttng::ClusterWaitOp>(op)) {
     membarInfo->sync();
+    return;
+  }
+  if (auto clusterBarrier = dyn_cast<ttng::ClusterBarrierOp>(op)) {
+    if (!clusterBarrier.getRelaxed())
+      membarInfo->sync();
     return;
   }
 
