@@ -144,7 +144,7 @@ tt.func private @scratch_callee() attributes {noinline = true} {
 
 // CHECK-LABEL: @virtual_call_frame_has_no_size
 tt.func @virtual_call_frame_has_no_size() {
-  // CHECK: tt.call @scratch_callee() {allocation.offset = 0 : i32}
+  // CHECK: tt.call @scratch_callee() {allocation.offset = 0 : i32, allocation.size = 4 : i32}
   tt.call @scratch_callee() : () -> ()
   tt.return
 }
