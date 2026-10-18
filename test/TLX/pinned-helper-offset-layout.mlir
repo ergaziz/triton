@@ -22,7 +22,7 @@
 //
 // CHECK-LABEL: tt.func private @load_then_restructure(
 // CHECK-SAME: %[[BASE:[a-zA-Z0-9_]+]]: !tt.ptr<f8E4M3FN>, %[[OFFSETS:[a-zA-Z0-9_]+]]: tensor<4x256xi32, #[[PIN:tlx.no_verify_layout<#shared[0-9]*>]]>
-// CHECK: %[[LOADED:.*]] = amdg.buffer_load %[[BASE]][%[[OFFSETS]]] : tensor<4x256xf8E4M3FN, #[[PIN]]>
+// CHECK: %[[LOADED:.*]] = amdg.buffer_load %[[BASE]][%[[OFFSETS]]] : !tt.ptr<f8E4M3FN> -> tensor<4x256xf8E4M3FN, #[[PIN]]>
 // CHECK: %[[RESHAPED:.*]] = tt.reshape %[[LOADED]]
 // CHECK-SAME: -> tensor<4x4x16x2x2xf8E4M3FN, #[[RESHAPE_LAYOUT:.*]]>
 // CHECK: %[[TRANSPOSED:.*]] = tt.trans %[[RESHAPED]]
