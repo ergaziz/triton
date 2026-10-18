@@ -830,8 +830,10 @@ module attributes {"ttg.num-ctas" = 4 : i32, "ttg.num-warps" = 4 : i32, ttg.targ
   // CHECK: ttng.wait_barrier
   // CHECK: ttg.local_dealloc
   // CHECK: ttg.local_alloc
-  // CHECK-NEXT: ttng.cluster_barrier
+  // CHECK-NEXT: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK-NEXT: ttg.local_store
+  // CHECK-NEXT: ttng.cluster_barrier
   tt.func @cluster_barrier_for_multicast_tma_memdesc_view(%desc: !tt.tensordesc<128x64xf16, #tmaShared>, %v: tensor<64x256xf16, #remoteBlocked>) {
     %c0 = arith.constant 0 : i32
     %true = arith.constant true
