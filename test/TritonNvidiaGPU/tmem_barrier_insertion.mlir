@@ -550,8 +550,8 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32} {
 
   // CHECK-LABEL: @multiple_warp_scope_writers
   // CHECK: ttg.warp_specialize
-  // CHECK: ttg.barrier local
-  // CHECK-NEXT: ttng.tmem_load
+  // CHECK-NOT: ttg.barrier local
+  // CHECK: ttng.tmem_load
   tt.func @multiple_warp_scope_writers(
       %arg0: tensor<128x128xf32, #blocked>) {
     %true = arith.constant true
