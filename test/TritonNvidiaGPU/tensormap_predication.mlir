@@ -24,7 +24,7 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, ttg.targ
     // CHECK: ttng.tensormap_create
     // CHECK: ttng.tensormap_fenceproxy_acquire
     scf.for %i = %c0 to %arg3 step %arg2 : i32 {
-      %desc = tt.make_tensor_descriptor %arg0, [%c128, %c64], [%c1_i64, %c1_i64] {loop.cluster = 0 : i32, loop.stage = 0 : i32} : <f16>, <128x64xf16, #nvmma_128>
+      %desc = tt.make_tensor_descriptor %arg0, [%c128, %c64], [%c1_i64, %c1_i64] {loop.cluster = 0 : i32, loop.stage = 0 : i32} : !tt.ptr<f16>, !tt.tensordesc<128x64xf16, #nvmma_128>
       %load = tt.descriptor_load %desc[%i, %i] {loop.cluster = 0 : i32, loop.stage = 0 : i32} : !tt.tensordesc<128x64xf16, #nvmma_128> -> tensor<128x64xf16, #blocked>
       %add = arith.addf %load, %load {loop.cluster = 0 : i32, loop.stage = 1 : i32} : tensor<128x64xf16, #blocked>
     } {tt.num_stages = 3 : i32, tt.scheduled_max_stage = 1 : i32}
