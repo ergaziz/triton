@@ -32,33 +32,33 @@ module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, ttg.targ
   // CHECK-LABEL: @cluster_entry_c
   // CHECK: ttg.convert_layout
   // CHECK-NEXT: ttng.cluster_barrier
-  tt.func private @cluster_entry_c() {
-    %cst = arith.constant dense<0.0> : tensor<256x128xf16, #blockedCallSrc>
-    %cvt = ttg.convert_layout %cst : tensor<256x128xf16, #blockedCallSrc> -> tensor<256x128xf16, #blockedCallDst>
+  tt.func private @cluster_entry_c(%input: tensor<256x128xf16, #blockedCallSrc>) -> tensor<256x128xf16, #blockedCallDst> {
+    %cvt = ttg.convert_layout %input : tensor<256x128xf16, #blockedCallSrc> -> tensor<256x128xf16, #blockedCallDst>
     ttng.cluster_barrier
-    tt.return
+    tt.return %cvt : tensor<256x128xf16, #blockedCallDst>
   }
 
   // CHECK-LABEL: @cluster_entry_b
   // CHECK-NOT: ttng.cluster_barrier
   // CHECK: tt.call @cluster_entry_c
-  tt.func private @cluster_entry_b() {
-    tt.call @cluster_entry_c() : () -> ()
-    tt.return
+  tt.func private @cluster_entry_b(%input: tensor<256x128xf16, #blockedCallSrc>) -> tensor<256x128xf16, #blockedCallDst> {
+    %result = tt.call @cluster_entry_c(%input) : (tensor<256x128xf16, #blockedCallSrc>) -> tensor<256x128xf16, #blockedCallDst>
+    tt.return %result : tensor<256x128xf16, #blockedCallDst>
   }
 
   // CHECK-LABEL: @cluster_entry_a
   // CHECK-NOT: ttng.cluster_barrier
   // CHECK: tt.call @cluster_entry_b
   // CHECK: ttg.convert_layout
-  // CHECK-NEXT: ttng.cluster_barrier
+  // CHECK-NEXT: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK-NEXT: tt.call @cluster_entry_b
-  tt.func @cluster_entry_a() {
-    tt.call @cluster_entry_b() : () -> ()
+  tt.func @cluster_entry_a() -> tensor<256x128xf16, #blockedCallDst> {
     %cst = arith.constant dense<0.0> : tensor<256x128xf16, #blockedCallSrc>
-    %cvt = ttg.convert_layout %cst : tensor<256x128xf16, #blockedCallSrc> -> tensor<256x128xf16, #blockedCallDst>
-    tt.call @cluster_entry_b() : () -> ()
-    tt.return
+    %first = tt.call @cluster_entry_b(%cst) : (tensor<256x128xf16, #blockedCallSrc>) -> tensor<256x128xf16, #blockedCallDst>
+    %middle = ttg.convert_layout %first : tensor<256x128xf16, #blockedCallDst> -> tensor<256x128xf16, #blockedCallSrc>
+    %second = tt.call @cluster_entry_b(%middle) : (tensor<256x128xf16, #blockedCallSrc>) -> tensor<256x128xf16, #blockedCallDst>
+    tt.return %second : tensor<256x128xf16, #blockedCallDst>
   }
 }
 
@@ -219,30 +219,27 @@ module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, ttg.targ
 // -----
 
 #blockedRetain = #ttg.blocked<{sizePerThread = [1, 32], threadsPerWarp = [8, 4], warpsPerCTA = [4, 1], order = [0, 1], CGALayout = [[0, 1]]}>
+#blockedRetainCross = #ttg.blocked<{sizePerThread = [1, 32], threadsPerWarp = [8, 4], warpsPerCTA = [4, 1], order = [0, 1], CGALayout = [[1, 0]]}>
 #sliceRetain0 = #ttg.slice<{dim = 0, parent = #blockedRetain}>
-#sliceRetain1 = #ttg.slice<{dim = 1, parent = #blockedRetain}>
 #sharedRetain = #ttg.nvmma_shared<{swizzlingByteWidth = 128, transposed = false, elementBitWidth = 32, CGALayout = [[0, 0]]}>
 #tmemRetain = #ttng.tensor_memory_encoding<blockM = 128, blockN = 128, colStride = 1, CGALayout = [[0, 0]]>
 #smem = #ttg.shared_memory
 
 module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, "ttng.two-ctas" = true, ttg.target = "cuda:100", "ttg.threads-per-warp" = 32 : i32} {
-  // The cross-CTA reduction leaves a distributed scratch read pending and
-  // forces a cluster barrier before the non-cross-CTA reduction. That barrier
-  // is before the second reduction, so its scratch effects must remain pending
-  // and force another cluster barrier before the two-CTA tmem copy that reuses
-  // the same shared-memory offset.
+  // The cross-CTA conversion synchronizes between its scratch write and read.
+  // The following CTA-local reduction must retain its scratch effects and force
+  // another cluster rendezvous before the two-CTA tmem copy reuses the same
+  // shared-memory offset.
   // CHECK-LABEL: @retain_scratch_effects_after_inserted_cluster_barrier
-  // CHECK: "tt.reduce"{{.*}}axis = 1
-  // CHECK: ttng.cluster_barrier
+  // CHECK: ttg.convert_layout
+  // CHECK-NEXT: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK: "tt.reduce"{{.*}}axis = 0
-  // CHECK: ttng.cluster_barrier
+  // CHECK: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK-NEXT: ttng.tmem_copy
-  tt.func @retain_scratch_effects_after_inserted_cluster_barrier(%input: tensor<256x128xf16, #blockedRetain>) {
-    %cross = "tt.reduce"(%input) ({
-    ^bb0(%lhs: f16, %rhs: f16):
-      %add = arith.addf %lhs, %rhs : f16
-      tt.reduce.return %add : f16
-    }) {axis = 1 : i32} : (tensor<256x128xf16, #blockedRetain>) -> tensor<256xf16, #sliceRetain1>
+  tt.func @retain_scratch_effects_after_inserted_cluster_barrier(%input: tensor<256x128xf16, #blockedRetain>) -> (tensor<256x128xf16, #blockedRetainCross>, tensor<128xf16, #sliceRetain0>) {
+    %cross = ttg.convert_layout %input : tensor<256x128xf16, #blockedRetain> -> tensor<256x128xf16, #blockedRetainCross>
 
     %local = "tt.reduce"(%input) ({
     ^bb0(%lhs: f16, %rhs: f16):
@@ -253,7 +250,7 @@ module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, "ttng.tw
     %src = ttg.local_alloc : () -> !ttg.memdesc<128x128xf32, #sharedRetain, #smem, mutable>
     %dst = ttng.tmem_alloc : () -> !ttg.memdesc<128x128xf32, #tmemRetain, #ttng.tensor_memory, mutable>
     ttng.tmem_copy %src, %dst : !ttg.memdesc<128x128xf32, #sharedRetain, #smem, mutable>, !ttg.memdesc<128x128xf32, #tmemRetain, #ttng.tensor_memory, mutable>
-    tt.return
+    tt.return %cross, %local : tensor<256x128xf16, #blockedRetainCross>, tensor<128xf16, #sliceRetain0>
   }
 }
 
