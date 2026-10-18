@@ -27,7 +27,8 @@ module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, ttg.targ
   // CHECK-LABEL: @relaxed_cluster_barrier_does_not_sync_memory
   // CHECK: ttg.convert_layout
   // CHECK-NEXT: ttng.cluster_barrier {relaxed = true}
-  // CHECK-NEXT: ttng.cluster_barrier{{$}}
+  // CHECK-NEXT: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK-NEXT: ttg.local_alloc
   tt.func @relaxed_cluster_barrier_does_not_sync_memory() -> tensor<256x128xf16, #blockedSplitM> {
     %cst = arith.constant dense<0.000000e+00> : tensor<256x128xf16, #blockedSplitM>
