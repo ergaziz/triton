@@ -153,7 +153,7 @@ module {
   tt.func private @load_then_restructure(
       %base: !tt.ptr<f8E4M3FN>,
       %offsets: tensor<4x256xi32, #pin>) -> tensor<128x8xf8E4M3FN> {
-    %loaded = amdg.buffer_load %base[%offsets] : tensor<4x256xf8E4M3FN, #pin>
+    %loaded = amdg.buffer_load %base[%offsets] : !tt.ptr<f8E4M3FN> -> tensor<4x256xf8E4M3FN, #pin>
     %reshaped = tt.reshape %loaded allow_reorder : tensor<4x256xf8E4M3FN, #pin> -> tensor<4x4x16x2x2xf8E4M3FN>
     %transposed = tt.trans %reshaped {order = array<i32: 0, 4, 2, 3, 1>} : tensor<4x4x16x2x2xf8E4M3FN> -> tensor<4x2x16x2x4xf8E4M3FN>
     %result = tt.reshape %transposed allow_reorder : tensor<4x2x16x2x4xf8E4M3FN> -> tensor<128x8xf8E4M3FN>
