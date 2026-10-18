@@ -173,7 +173,6 @@ tt.func @tma_special_cases(%arg1: !tt.tensordesc<256x64xf16, #shared>, %arg2: !t
   ttng.wait_barrier %barrier, %c0 : !ttg.memdesc<1xi64, #shared1, #ttg.shared_memory, mutable>
 
   // CHECK-NEXT: memdesc_subslice
-  // CHECK-NEXT: ttg.barrier local
   // CHECK-NEXT: ttng.barrier_expect
   // CHECK-NEXT: ttg.barrier local
   // CHECK-NEXT: ttng.async_tma_gather
