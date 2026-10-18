@@ -306,7 +306,8 @@ module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, "ttng.tw
   // write, so the read must be classified as distributed and synchronized.
   // CHECK-LABEL: @cross_cta_atomic_cas_then_local_reduce
   // CHECK: tt.atomic_cas
-  // CHECK-NEXT: ttng.cluster_barrier
+  // CHECK-NEXT: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK-NEXT: "tt.reduce"{{.*}}axis = 0
   tt.func @cross_cta_atomic_cas_then_local_reduce(%ptr: !tt.ptr<i32>, %input: tensor<256x128xf16, #blockedScratch>) -> (i32, tensor<128xf16, #sliceScratch0>) {
     %c0 = arith.constant 0 : i32
@@ -341,7 +342,8 @@ module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, "ttng.tw
   // must wait for the pending cross-CTA read.
   // CHECK-LABEL: @cross_cta_atomic_rmw_then_local_reduce
   // CHECK: tt.atomic_rmw
-  // CHECK-NEXT: ttng.cluster_barrier
+  // CHECK-NEXT: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK-NEXT: "tt.reduce"{{.*}}axis = 0
   tt.func @cross_cta_atomic_rmw_then_local_reduce(%ptr: !tt.ptr<i32>, %input: tensor<256x128xf16, #blockedScratch>) -> (i32, tensor<128xf16, #sliceScratch0>) {
     %c1 = arith.constant 1 : i32
@@ -375,7 +377,8 @@ module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, "ttng.tw
   // must wait for the pending cross-CTA read.
   // CHECK-LABEL: @cross_cta_atomic_poll_then_local_reduce
   // CHECK: tt.atomic_poll
-  // CHECK-NEXT: ttng.cluster_barrier
+  // CHECK-NEXT: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK-NEXT: "tt.reduce"{{.*}}axis = 0
   tt.func @cross_cta_atomic_poll_then_local_reduce(%ptr: !tt.ptr<i32>, %expected: i32, %timeout: i64, %input: tensor<256x128xf16, #blockedScratch>) -> (i1, tensor<128xf16, #sliceScratch0>) {
     %matched = tt.atomic_poll acquire, gpu, %ptr, %expected timeout %timeout : !tt.ptr<i32>, i32 -> i1
@@ -426,7 +429,8 @@ module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, "ttng.tw
   // must wait for the pending cross-CTA read.
   // CHECK-LABEL: @cross_cta_local_atomic_scatter_then_local_reduce
   // CHECK: ttg.local_atomic_scatter_rmw
-  // CHECK-NEXT: ttng.cluster_barrier
+  // CHECK-NEXT: ttng.cluster_arrive
+  // CHECK-NEXT: ttng.cluster_wait
   // CHECK-NEXT: "tt.reduce"{{.*}}axis = 0
   tt.func @cross_cta_local_atomic_scatter_then_local_reduce(
       %indices: tensor<8x32xi32, #replicatedAtomicScratch>,
