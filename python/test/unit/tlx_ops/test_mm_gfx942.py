@@ -18,6 +18,22 @@ pytestmark = pytest.mark.skipif(not is_hip_cdna3(), reason="Requires gfx942")
 ARCH = "gfx942"
 
 
+@pytest.mark.parametrize("m", [4178, 4942])
+@pytest.mark.parametrize("n", [256, 512, 1280, 2560])
+def test_deep_k_batch_boundaries(m, n):
+    import triton.tlx.ops as ops
+
+    k = 18688
+    torch.manual_seed(m + n + k)
+    a = torch.randn((m, k), device="cuda", dtype=torch.float16)
+    b = torch.randn((n, k), device="cuda", dtype=torch.float16).t()
+    out = torch.empty((m, n), device="cuda", dtype=torch.float16)
+    expected = torch.mm(a, b)
+    for _ in range(3):
+        assert ops.mm(a, b, out=out, space="heuristic") is out
+        torch.testing.assert_close(out, expected, atol=0.05, rtol=0.05)
+
+
 def test_gfx942_wide_heuristic_config():
     from triton.tlx.ops.kernels.mm import gfx942
 
@@ -139,7 +155,7 @@ def test_unaligned_row_base_vectorizes():
     assert "buffer_load_dwordx4" in compiled.asm["amdgcn"], "expected 16-byte VMEM load"
 
 
-@pytest.mark.parametrize("K", [513, 527, 528, 529])
+@pytest.mark.parametrize("K", [64, 65, 70, 127, 129, 255, 513, 527, 528, 529])
 @pytest.mark.parametrize("block_k", [64, 128])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("add_bias", [False, True])

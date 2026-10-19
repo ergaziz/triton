@@ -36,6 +36,30 @@ FOCUS_SUITES = (
             AddMMShape(61440, 2048, 5120, (5120, 1), (1, 5120), (1, ), "bf16"),
         ),
     ),
+    # Ranking merge-net production shapes, heaviest first.
+    FocusSuite(
+        name="gfx942_2",
+        op="addmm",
+        shapes=(
+            AddMMShape(4662, 2560, 18688, (18688, 1), (1, 18688), (1, ), "fp16"),
+            AddMMShape(4662, 18688, 512, (512, 1), (1, 512), (1, ), "fp16"),
+            AddMMShape(4662, 512, 18688, (18688, 1), (1, 18688), (1, ), "fp16"),
+            AddMMShape(4662, 2560, 2560, (2560, 1), (1, 2560), (1, ), "fp16"),
+            AddMMShape(4662, 8192, 2560, (2560, 1), (1, 2560), (1, ), "fp16"),
+            AddMMShape(4662, 18688, 256, (256, 1), (1, 256), (1, ), "fp16"),
+            AddMMShape(4662, 256, 18688, (18688, 1), (1, 18688), (1, ), "fp16"),
+            AddMMShape(4662, 1280, 18688, (18688, 1), (1, 18688), (1, ), "fp16"),
+            AddMMShape(4662, 2560, 1280, (1280, 1), (1, 1280), (1, ), "fp16"),
+            AddMMShape(4662, 1280, 2560, (2560, 1), (1, 2560), (1, ), "fp16"),
+            AddMMShape(4662, 8192, 1280, (1280, 1), (1, 1280), (1, ), "fp16"),
+            AddMMShape(4662, 2048, 2560, (2560, 1), (1, 2560), (1, ), "fp16"),
+        ),
+    ),
+    FocusSuite(
+        name="gfx942_all",
+        op="addmm",
+        includes=("gfx942_1", "gfx942_2"),
+    ),
     FocusSuite(
         name="gfx950_1",
         op="addmm",
@@ -140,7 +164,7 @@ FOCUS_SUITES = (
 )
 
 DEFAULT_SUITES = {
-    "gfx942": ("gfx942_1", ),
+    "gfx942": ("gfx942_all", ),
     "gfx950": ("gfx950_all", ),
 }
 FOCUS = FocusRegistry("addmm", FOCUS_SUITES, DEFAULT_SUITES)
