@@ -211,6 +211,27 @@ def make_ir_for_target(fn, signature, constexprs, target):
     return src.make_ir(target, options, codegen_fns, {}, context)
 
 
+@triton.jit
+def _allocate_tensor_descriptor_kernel(NUM_DESCRIPTORS: tl.constexpr):
+    _ = tlx.allocate_tensor_descriptor(NUM_DESCRIPTORS)
+
+
+@pytest.mark.parametrize("num_descriptors", [1, 3])
+def test_allocate_tensor_descriptor_frontend(num_descriptors):
+    module = make_ir_for_target(
+        _allocate_tensor_descriptor_kernel,
+        signature={"NUM_DESCRIPTORS": "constexpr"},
+        constexprs={"NUM_DESCRIPTORS": num_descriptors},
+        target=GPUTarget("cuda", 90, 32),
+    )
+    allocations = [line for line in str(module).splitlines() if "ttg.global_scratch_alloc" in line]
+    assert len(allocations) == 1
+    allocation = allocations[0]
+    assert "alignment = 128 : i32" in allocation
+    assert f"nbytes = {128 * num_descriptors} : i32" in allocation
+    assert re.search(r"(?:->|:)\s*!tt\.ptr<i8>(?:\s|$)", allocation)
+
+
 def test_swizzled_layout_cute_mapping():
     """`tlx.swizzled_layout(B, M, S)` is the CuTe Swizzle<B,M,S> (positional args).
     It resolves to Triton's (vec, perPhase, maxPhase) for a given contiguous extent,
