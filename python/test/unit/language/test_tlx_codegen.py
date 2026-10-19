@@ -3594,7 +3594,7 @@ def test_buffer_atomic_contiguity_preserves_layout_gfx950():
     assert "tlx.preserve_layout" in ttgir
     atomic = re.search(
         r"(?P<result>%[\w.]+) = amdg\.buffer_atomic_rmw.*"
-        r"tlx\.preserve_layout.*: tensor<1024xbf16, (?P<layout>#[\w.]+)>",
+        r"tlx\.preserve_layout.*: !tt\.ptr<bf16> -> tensor<1024xbf16, (?P<layout>#[\w.]+)>",
         ttgir,
     )
     assert atomic is not None
