@@ -248,8 +248,9 @@ private:
   }
 
   ConstantInt evaluate(arith::CmpIOp op) const {
-    return evaluateBinary([&](const APInt &a, const APInt &b) {
-      return APInt(1, arith::applyCmpPredicate(op.getPredicate(), a, b));
+    return evaluateBinary([&](const APInt &a, const APInt &b) -> ConstantInt {
+      return ConstantInt(std::in_place, 1,
+                         arith::applyCmpPredicate(op.getPredicate(), a, b));
     });
   }
 
