@@ -161,7 +161,8 @@ tt.func @wait_after_mma(
 ) {
   %phase = arith.constant 0 : i32
   %barrier = ttg.local_alloc : () -> !ttg.memdesc<1xi64, #shared2, #smem, mutable>
-  // The fused MMA's leading barrier also synchronizes the preceding wait.
+  // The fused MMA commits completion after its memory effects; the wait consumes
+  // that completion without another CTA barrier.
   // CHECK: ttg.async_wait
   ttg.async_wait {num = 0 : i32}
   // CHECK-NEXT: ttng.tc_gen5_mma
@@ -170,7 +171,6 @@ tt.func @wait_after_mma(
      !ttg.memdesc<128x128xf16, #shared1, #smem>,
      !ttg.memdesc<128x128xf32, #tmem, #ttng.tensor_memory, mutable>,
      !ttg.memdesc<1xi64, #shared2, #smem, mutable>
-  // CHECK-NEXT: ttg.barrier local
   // CHECK-NEXT: ttng.wait_barrier
   ttng.wait_barrier %barrier, %phase : !ttg.memdesc<1xi64, #shared2, #smem, mutable>
   tt.return

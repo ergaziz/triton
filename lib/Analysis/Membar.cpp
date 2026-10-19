@@ -738,9 +738,9 @@ triton::BarrierStages getLocalBarrierStages(Operation *op,
   // Warp specialization writes its captures before the launch rendezvous.
   if (isa<triton::gpu::WarpSpecializeOp>(op))
     stages.beforeMemoryEffects = !hasScratchBarrier;
-  // Fused MMA completion synchronizes the partition before issuing the MMA.
+  // MMA completion barriers are committed after the MMA's memory effects.
   if (auto mma = dyn_cast<ttng::MMAv5OpInterface>(op))
-    stages.beforeMemoryEffects = !mma.getCompletionBarriers().empty();
+    stages.afterMemoryEffects = !mma.getCompletionBarriers().empty();
   if (auto wgWait = dyn_cast<ttng::WarpGroupDotWaitOp>(op))
     stages.beforeMemoryEffects =
         !wgWait.getWarpGroupLocal() && triton::gpu::lookupNumWarps(op) > 4;
