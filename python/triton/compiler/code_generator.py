@@ -1589,7 +1589,7 @@ class CodeGenerator(ast.NodeVisitor):
         args = [args[name] for name in fn.arg_names]
 
         def normalize_arg(arg):
-            if isinstance(arg, language.tuple):
+            if isinstance(arg, (builtins.tuple, language.tuple)):
                 return _apply_to_tuple_values(arg, normalize_arg)
             if not isinstance(arg, base_value) or isinstance(arg, JITCallable):
                 return language.core.constexpr(arg)
